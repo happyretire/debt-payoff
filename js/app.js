@@ -295,6 +295,7 @@ const App = (() => {
         const method = document.getElementById('earlyMethod').value;
         const earlyMonth = parseInt(document.getElementById('earlyMonth').value);
         const earlyAmount = parseFloat(document.getElementById('earlyAmount').value);
+        const earlyFeeRate = parseFloat(document.getElementById('earlyFeeRate').value) || 0;
 
         const principal = parseFloat(document.getElementById('loanAmount').value);
         const rate = parseFloat(document.getElementById('interestRate').value);
@@ -322,28 +323,33 @@ const App = (() => {
 
         const savedInterest = originalSummary.totalInterest - earlySummary.totalInterest;
         const savedMonths = originalSummary.months - earlySummary.months;
+        const earlyFeeAmount = earlyAmount * (earlyFeeRate / 100);
+        const netBenefit = savedInterest - earlyFeeAmount;
 
         const resultDiv = document.getElementById('earlyResult');
         const compDiv = document.getElementById('earlyComparison');
 
         compDiv.innerHTML = `
       <div class="early-stat">
-        <span class="label">기존 총이자</span>
-        <span class="value">${formatMoney(originalSummary.totalInterest)}</span>
+        <span class="label">절감되는 이자</span>
+        <span class="value">${formatMoney(savedInterest)}</span>
       </div>
       <div class="early-stat">
-        <span class="label">중도상환 후 총이자</span>
-        <span class="value">${formatMoney(earlySummary.totalInterest)}</span>
+        <span class="label">중도상환 수수료</span>
+        <span class="value" style="color:var(--accent-red)">+ ${formatMoney(earlyFeeAmount)}</span>
       </div>
-      <div class="early-stat">
-        <span class="label">절약 이자</span>
-        <span class="value saved">▼ ${formatMoney(savedInterest)}</span>
+      <div class="early-stat" style="grid-column: span 2; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color)">
+        <span class="label">최종 실질 수익 (이자 절감 - 수수료)</span>
+        <span class="value saved" style="font-size: 1.1rem">
+          ${netBenefit > 0 ? '▼ ' : ''}${formatMoney(netBenefit)}
+        </span>
       </div>
       <div class="early-stat">
         <span class="label">단축 기간</span>
         <span class="value saved">${savedMonths > 0 ? `▼ ${savedMonths}개월` : '-'}</span>
       </div>
     `;
+
 
         resultDiv.classList.add('visible');
     }
