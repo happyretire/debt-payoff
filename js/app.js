@@ -48,6 +48,15 @@ const App = (() => {
         // 테마 토글
         document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 
+        // 결과 수출
+        document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
+        document.getElementById('btnExportImage').addEventListener('click', captureResults);
+
+        // 스케줄 더보기
+        document.getElementById('btnLoadMore').addEventListener('click', () => {
+            renderScheduleTable(true);
+        });
+
         // Enter 키로 계산
         document.querySelectorAll('#input-section input').forEach((input) => {
             input.addEventListener('keypress', (e) => {
@@ -127,31 +136,38 @@ const App = (() => {
         const grid = document.getElementById('summaryGrid');
         grid.innerHTML = '';
 
-        // 최소 이자 방식 찾기
-        let minInterest = Infinity;
-        let minMethod = '';
-        methods.forEach((m) => {
-            const s = Calculator.summarize(results[m]);
-            if (s.totalInterest < minInterest) {
-                minInterest = s.totalInterest;
-                minMethod = m;
-            }
-        });
+        const summaries = methods.map(m => ({ method: m, ...Calculator.summarize(results[m]) }));
+
+        // 1위 선정 (최저이자, 최저월납입 등)
+        const minInterestMethod = summaries.reduce((prev, curr) => prev.totalInterest < curr.totalInterest ? prev : curr).method;
+        const minAvgPaymentMethod = summaries.reduce((prev, curr) => prev.avgPayment < curr.avgPayment ? prev : curr).method;
+        const maxInterest = Math.max(...summaries.map(s => s.totalInterest));
 
         methods.forEach((method, idx) => {
-            const summary = Calculator.summarize(results[method]);
+            const summary = summaries.find(s => s.method === method);
             const color = Calculator.METHOD_COLORS[method];
+            const interestSaved = maxInterest - summary.totalInterest;
 
             const card = document.createElement('div');
             card.className = 'summary-card';
-            card.style.setProperty('--card-accent', color);
             card.style.cssText += `animation-delay: ${idx * 0.05}s;`;
-            card.querySelector?.('::before')?.style?.setProperty?.('background', color);
 
-            const bestBadge = method === minMethod && methods.length > 1 ? '<span class="best-label">최저</span>' : '';
+            // 배지 생성
+            let badgesHTML = '<div class="best-badge-container">';
+            if (method === minInterestMethod && methods.length > 1) {
+                badgesHTML += '<span class="best-label">🏆 이자 절감 1위</span>';
+            }
+            if (method === minAvgPaymentMethod && methods.length > 1) {
+                badgesHTML += '<span class="best-label lowest-monthly">💰 월 부담 최소</span>';
+            }
+            if (interestSaved > 0 && method !== minInterestMethod) {
+                badgesHTML += `<span class="best-label savings">-${formatMoney(interestSaved)} 절감</span>`;
+            }
+            badgesHTML += '</div>';
 
             card.innerHTML = `
         <div style="position:absolute;top:0;left:0;width:4px;height:100%;background:${color};border-radius:4px 0 0 4px;"></div>
+        ${badgesHTML}
         <div class="method-name">
           <span class="method-dot" style="background:${color};box-shadow:0 0 8px ${color}"></span>
           ${Calculator.METHOD_LABELS[method]}
@@ -159,7 +175,7 @@ const App = (() => {
         <div class="summary-stats">
           <div class="stat-item">
             <span class="stat-label">총 이자</span>
-            <span class="stat-value interest">${formatMoney(summary.totalInterest)}${bestBadge}</span>
+            <span class="stat-value interest">${formatMoney(summary.totalInterest)}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">총 상환액</span>
@@ -179,7 +195,6 @@ const App = (() => {
             grid.appendChild(card);
         });
 
-        // 숫자 애니메이션
         animateNumbers(grid);
     }
 
@@ -237,25 +252,25 @@ const App = (() => {
     }
 
     // ─── 스케줄 테이블 렌더링 ───
-    function renderScheduleTable() {
+    function renderScheduleTable(full = false) {
         const method = document.getElementById('scheduleMethodSelect').value;
         const schedule = results[method];
         const tbody = document.getElementById('scheduleBody');
+        const loadMoreContainer = document.getElementById('loadMoreContainer');
 
         if (!schedule) {
             tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--text-muted)">상환 방식을 선택하세요</td></tr>';
+            loadMoreContainer.classList.add('hidden');
             return;
         }
 
         tbody.innerHTML = '';
 
-        // 기간이 길면 연 단위로 표시 옵션
-        const showAll = schedule.length <= 120;
+        // 기본적으로 120개월만 표시, full이면 전체 표시
+        const limit = full ? schedule.length : 120;
+        const showLoadMore = !full && schedule.length > 120;
 
-        schedule.forEach((row, i) => {
-            // 120개월 이상이면 12개월마다 + 마지막만
-            if (!showAll && i % 12 !== 0 && i !== schedule.length - 1) return;
-
+        schedule.slice(0, limit).forEach((row, i) => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
         <td>${row.month}회</td>
@@ -264,9 +279,14 @@ const App = (() => {
         <td>${formatWon(row.interest)}</td>
         <td>${formatWon(row.balance)}</td>
       `;
-
             tbody.appendChild(tr);
         });
+
+        if (showLoadMore) {
+            loadMoreContainer.classList.remove('hidden');
+        } else {
+            loadMoreContainer.classList.add('hidden');
+        }
     }
 
     // ─── 중도상환 시뮬레이션 ───
@@ -326,6 +346,52 @@ const App = (() => {
     `;
 
         resultDiv.classList.add('visible');
+    }
+
+    // ─── 결과 파일 저장 (CSV) ───
+    function exportToCSV() {
+        const method = document.getElementById('scheduleMethodSelect').value;
+        const schedule = results[method];
+        if (!schedule) return;
+
+        let csv = '회차,월상환액(원),원금(원),이자(원),잔액(원)\n';
+        schedule.forEach(r => {
+            csv += `${r.month},${Math.round(r.payment * 10000)},${Math.round(r.principal * 10000)},${Math.round(r.interest * 10000)},${Math.round(r.balance * 10000)}\n`;
+        });
+
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        link.setAttribute('href', url);
+        link.setAttribute('download', `대출상환계획_${Calculator.METHOD_LABELS[method]}.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // ─── 결과 이미지 캡처 ───
+    function captureResults() {
+        const target = document.getElementById('results-section');
+        const btn = document.getElementById('btnExportImage');
+        btn.textContent = '⏳';
+
+        html2canvas(target, {
+            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue('--bg-primary').trim(),
+            scale: 2,
+            logging: false,
+            useCORS: true
+        }).then(canvas => {
+            const link = document.createElement('a');
+            link.download = '대출상환비교결과.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            btn.textContent = '🖼️';
+        }).catch(err => {
+            console.error(err);
+            btn.textContent = '🖼️';
+            alert('이미지 생성 중 오류가 발생했습니다.');
+        });
     }
 
     // ─── 테마 ───

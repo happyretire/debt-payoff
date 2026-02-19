@@ -8,6 +8,7 @@
   <meta name="description" content="한국 대출 상환 방식을 한눈에 비교하세요. 원리금균등, 원금균등, 만기일시, 거치식 상환의 이자 차이를 즉시 확인할 수 있습니다." />
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 
 <body>
@@ -95,7 +96,13 @@
     <!-- ─── Results Section ─── -->
     <section id="results-section">
       <!-- Summary Cards -->
-      <h2 class="section-title" style="margin-top: 1.5rem"><span class="icon">📋</span>상환 방식 비교 요약</h2>
+      <div class="section-header-flex">
+        <h2 class="section-title"><span class="icon">📋</span>상환 방식 비교 요약</h2>
+        <div class="export-actions">
+          <button class="btn-export" id="btnExportImage" title="이미지로 저장">🖼️</button>
+          <button class="btn-export" id="btnExportCSV" title="CSV로 다운로드">📥</button>
+        </div>
+      </div>
       <div class="summary-grid" id="summaryGrid"></div>
 
       <!-- Interest Comparison Bars -->
@@ -135,6 +142,9 @@
             </thead>
             <tbody id="scheduleBody"></tbody>
           </table>
+        </div>
+        <div id="loadMoreContainer" class="load-more-container hidden">
+          <button class="btn-load-more" id="btnLoadMore">상세 스케줄 더 보기 (전체 회차)</button>
         </div>
       </div>
 
