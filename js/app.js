@@ -257,16 +257,12 @@ const App = (() => {
             if (!showAll && i % 12 !== 0 && i !== schedule.length - 1) return;
 
             const tr = document.createElement('tr');
-            const monthLabel = row.month >= 12
-                ? `${Math.floor(row.month / 12)}년 ${row.month % 12 ? row.month % 12 + '개월' : ''}`
-                : `${row.month}개월`;
-
             tr.innerHTML = `
         <td>${row.month}회</td>
-        <td>${formatMoney(row.payment)}</td>
-        <td>${formatMoney(row.principal)}</td>
-        <td>${formatMoney(row.interest)}</td>
-        <td>${formatMoney(row.balance)}</td>
+        <td>${formatWon(row.payment)}</td>
+        <td>${formatWon(row.principal)}</td>
+        <td>${formatWon(row.interest)}</td>
+        <td>${formatWon(row.balance)}</td>
       `;
 
             tbody.appendChild(tr);
@@ -274,6 +270,7 @@ const App = (() => {
     }
 
     // ─── 중도상환 시뮬레이션 ───
+
     function simulateEarlyRepayment() {
         const method = document.getElementById('earlyMethod').value;
         const earlyMonth = parseInt(document.getElementById('earlyMonth').value);
@@ -353,6 +350,12 @@ const App = (() => {
     }
 
     // ─── 유틸리티 ───
+    function formatWon(value) {
+        if (value === undefined || value === null || isNaN(value)) return '0원';
+        // 만원 단위를 원 단위로 변환 (10,000 곱함) 후 반올림
+        return Math.round(value * 10000).toLocaleString('ko-KR') + '원';
+    }
+
     function formatMoney(value) {
         if (value === undefined || value === null || isNaN(value)) return '0원';
         if (Math.abs(value) >= 10000) {
