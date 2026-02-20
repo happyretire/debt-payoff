@@ -8,6 +8,10 @@ const App = (() => {
         ChartManager.init();
         bindEvents();
         applyTheme();
+        // 초기 헬퍼 텍스트 업데이트
+        document.getElementById('loanAmount').dispatchEvent(new Event('input'));
+        document.getElementById('loanPeriod').dispatchEvent(new Event('input'));
+        document.getElementById('earlyAmount').dispatchEvent(new Event('input'));
     }
 
     // ─── 이벤트 바인딩 ───
@@ -35,8 +39,17 @@ const App = (() => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.chart-tab').forEach((t) => t.classList.remove('active'));
                 tab.classList.add('active');
-                ChartManager.render(tab.getAttribute('data-chart'));
+                const isClipped = document.getElementById('clipToggle').checked;
+                ChartManager.render(tab.getAttribute('data-chart'), isClipped);
             });
+        });
+
+        // Y축 최적화 토글
+        document.getElementById('clipToggle').addEventListener('change', (e) => {
+            const activeTab = document.querySelector('.chart-tab.active');
+            if (activeTab) {
+                ChartManager.render(activeTab.getAttribute('data-chart'), e.target.checked);
+            }
         });
 
         // 스케줄 테이블 방식 변경
@@ -46,7 +59,49 @@ const App = (() => {
         document.getElementById('btnSimulate').addEventListener('click', simulateEarlyRepayment);
 
         // 테마 토글
+        // 테마 토글
         document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+        document.getElementById('btnReset').addEventListener('click', () => {
+            if (confirm('입력된 모든 값을 초기화하시겠습니까?')) {
+                // 1. 기본 입력값 리셋
+                document.getElementById('loanAmount').value = 30000;
+                document.getElementById('interestRate').value = 3.5;
+                document.getElementById('loanPeriod').value = 30;
+                document.getElementById('gracePeriod').value = 2;
+                document.getElementById('graceRange').value = 2;
+                document.getElementById('graceMonthsBadge').textContent = '24개월 거치';
+
+                // 2. 중도상환 시뮬레이션 입력값 리셋
+                document.getElementById('earlyMonth').value = 12;
+                document.getElementById('earlyAmount').value = 5000;
+                document.getElementById('earlyFeeRate').value = 1.2;
+
+                // 3. 헬퍼 텍스트 업데이트 트리거
+                document.getElementById('loanAmount').dispatchEvent(new Event('input'));
+                document.getElementById('loanPeriod').dispatchEvent(new Event('input'));
+                document.getElementById('earlyAmount').dispatchEvent(new Event('input'));
+
+                // 4. 상환 방식 칩 초기화 (거치식 OFF, 나머지 ON)
+                document.querySelectorAll('.method-chip').forEach(chip => {
+                    const method = chip.dataset.method;
+                    const cb = chip.querySelector('input');
+                    if (method === 'grace') {
+                        cb.checked = false;
+                        chip.classList.remove('active');
+                    } else {
+                        cb.checked = true;
+                        chip.classList.add('active');
+                    }
+                });
+
+                // 5. UI 섹션 숨기기 및 스크롤
+                document.getElementById('graceOption').classList.add('hidden');
+                document.getElementById('results-section').classList.remove('visible');
+                document.getElementById('earlyResult').classList.remove('visible');
+
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        });
 
         // 결과 수출
         document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
@@ -57,12 +112,56 @@ const App = (() => {
             renderScheduleTable(true);
         });
 
+        // 거치 기간 동기화
+        const graceInput = document.getElementById('gracePeriod');
+        const graceRange = document.getElementById('graceRange');
+        const graceBadge = document.getElementById('graceMonthsBadge');
+
+        const updateGrace = (val) => {
+            graceInput.value = val;
+            graceRange.value = val;
+            graceBadge.textContent = `${val * 12}개월 거치`;
+        };
+
+        graceInput.addEventListener('input', (e) => updateGrace(e.target.value));
+        graceRange.addEventListener('input', (e) => updateGrace(e.target.value));
+
         // Enter 키로 계산
         document.querySelectorAll('#input-section input').forEach((input) => {
             input.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') calculate();
             });
         });
+
+        // 헬퍼 텍스트 업데이트
+        const loanAmountInput = document.getElementById('loanAmount');
+        const loanAmountHelper = document.getElementById('loanAmountHelper');
+        const earlyAmountInput = document.getElementById('earlyAmount');
+        const earlyAmountHelper = document.getElementById('earlyAmountHelper');
+        const periodInput = document.getElementById('loanPeriod');
+        const periodHelper = document.getElementById('periodHelper');
+
+        const updateAmountHelper = (input, helper) => {
+            const val = parseFloat(input.value);
+            if (!val || val <= 0) {
+                helper.textContent = '';
+                return;
+            }
+            helper.textContent = Calculator.formatKRW(val);
+        };
+
+        const updatePeriodHelper = (input, helper) => {
+            const val = parseInt(input.value);
+            if (!val || val <= 0) {
+                helper.textContent = '';
+                return;
+            }
+            helper.textContent = `총 ${val * 12}개월`;
+        };
+
+        loanAmountInput.addEventListener('input', () => updateAmountHelper(loanAmountInput, loanAmountHelper));
+        earlyAmountInput.addEventListener('input', () => updateAmountHelper(earlyAmountInput, earlyAmountHelper));
+        periodInput.addEventListener('input', () => updatePeriodHelper(periodInput, periodHelper));
     }
 
     // ─── 메인 계산 ───
@@ -121,7 +220,8 @@ const App = (() => {
         populateDropdowns(selectedMethods);
 
         ChartManager.setResults(results);
-        ChartManager.render('payment');
+        const isClipped = document.getElementById('clipToggle').checked;
+        ChartManager.render('payment', isClipped);
         document.querySelectorAll('.chart-tab').forEach((t) => t.classList.remove('active'));
         document.querySelector('.chart-tab[data-chart="payment"]').classList.add('active');
 
@@ -138,9 +238,15 @@ const App = (() => {
 
         const summaries = methods.map(m => ({ method: m, ...Calculator.summarize(results[m]) }));
 
-        // 1위 선정 (최저이자, 최저월납입 등)
+        // 1위 선정 (최저이자, 최저월납입, 지출 안정성 등)
         const minInterestMethod = summaries.reduce((prev, curr) => prev.totalInterest < curr.totalInterest ? prev : curr).method;
-        const minAvgPaymentMethod = summaries.reduce((prev, curr) => prev.avgPayment < curr.avgPayment ? prev : curr).method;
+        const minPaymentMethod = summaries.reduce((prev, curr) => prev.minPayment < curr.minPayment ? prev : curr).method;
+        const mostStableMethod = summaries.reduce((prev, curr) => {
+            const prevGap = (prev.maxPayment || 0) - (prev.minPayment || 0);
+            const currGap = (curr.maxPayment || 0) - (curr.minPayment || 0);
+            return prevGap <= currGap ? prev : curr;
+        }).method;
+
         const maxInterest = Math.max(...summaries.map(s => s.totalInterest));
 
         methods.forEach((method, idx) => {
@@ -152,17 +258,25 @@ const App = (() => {
             card.className = 'summary-card';
             card.style.cssText += `animation-delay: ${idx * 0.05}s;`;
 
-            // 배지 생성
+            // 배지 생성 - 사용자 상황에 맞는 장점 강조
             let badgesHTML = '<div class="best-badge-container">';
+
             if (method === minInterestMethod && methods.length > 1) {
-                badgesHTML += '<span class="best-label">🏆 이자 절감 1위</span>';
+                badgesHTML += '<span class="best-label">💎 총 이자 최저</span>';
             }
-            if (method === minAvgPaymentMethod && methods.length > 1) {
-                badgesHTML += '<span class="best-label lowest-monthly">💰 월 부담 최소</span>';
+
+            if ((method === minPaymentMethod || method === 'bullet') && methods.length > 1 && method !== minInterestMethod) {
+                badgesHTML += '<span class="best-label lowest-monthly">💸 현금 흐름 확보</span>';
             }
-            if (interestSaved > 0 && method !== minInterestMethod) {
-                badgesHTML += `<span class="best-label savings">-${formatMoney(interestSaved)} 절감</span>`;
+
+            if (method === mostStableMethod && methods.length > 1 && (method === 'equalPayment' || method === 'bullet')) {
+                badgesHTML += '<span class="best-label stable">⚖️ 일정한 지출</span>';
             }
+
+            if (method === 'grace' && methods.length > 1) {
+                badgesHTML += '<span class="best-label grace-badge">⏳ 초기 부담 완화</span>';
+            }
+
             badgesHTML += '</div>';
 
             card.innerHTML = `
@@ -175,19 +289,19 @@ const App = (() => {
         <div class="summary-stats">
           <div class="stat-item">
             <span class="stat-label">총 이자</span>
-            <span class="stat-value interest">${formatMoney(summary.totalInterest)}</span>
+            <span class="stat-value interest">${Calculator.formatKRW(summary.totalInterest)}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">총 상환액</span>
-            <span class="stat-value">${formatMoney(summary.totalPayment)}</span>
+            <span class="stat-value">${Calculator.formatKRW(summary.totalPayment)}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">월 평균 상환</span>
-            <span class="stat-value highlight">${formatMoney(summary.avgPayment)}</span>
+            <span class="stat-value highlight">${Calculator.formatKRW(summary.avgPayment)}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">월 최대 상환</span>
-            <span class="stat-value">${formatMoney(summary.maxPayment)}</span>
+            <span class="stat-value">${Calculator.formatKRW(summary.maxPayment)}</span>
           </div>
         </div>
       `;
@@ -221,7 +335,7 @@ const App = (() => {
         <div class="interest-bar-track">
           <div class="interest-bar-fill" style="background:${color};width:0%"></div>
         </div>
-        <span class="interest-bar-amount">${formatMoney(item.interest)}</span>
+        <span class="interest-bar-amount">${Calculator.formatKRW(item.interest)}</span>
       `;
 
             container.appendChild(barItem);
@@ -332,16 +446,16 @@ const App = (() => {
         compDiv.innerHTML = `
       <div class="early-stat">
         <span class="label">절감되는 이자</span>
-        <span class="value">${formatMoney(savedInterest)}</span>
+        <span class="value">${Calculator.formatKRW(savedInterest)}</span>
       </div>
       <div class="early-stat">
         <span class="label">중도상환 수수료</span>
-        <span class="value" style="color:var(--accent-red)">+ ${formatMoney(earlyFeeAmount)}</span>
+        <span class="value" style="color:var(--accent-red)">+ ${Calculator.formatKRW(earlyFeeAmount)}</span>
       </div>
       <div class="early-stat" style="grid-column: span 2; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed var(--border-color)">
         <span class="label">최종 실질 수익 (이자 절감 - 수수료)</span>
         <span class="value saved" style="font-size: 1.1rem">
-          ${netBenefit > 0 ? '▼ ' : ''}${formatMoney(netBenefit)}
+          ${netBenefit > 0 ? '▼ ' : ''}${Calculator.formatKRW(netBenefit)}
         </span>
       </div>
       <div class="early-stat">
@@ -428,21 +542,11 @@ const App = (() => {
         return Math.round(value * 10000).toLocaleString('ko-KR') + '원';
     }
 
-    function formatMoney(value) {
-        if (value === undefined || value === null || isNaN(value)) return '0원';
-        if (Math.abs(value) >= 10000) {
-            const eok = Math.floor(value / 10000);
-            const man = Math.round(value % 10000);
-            if (man === 0) return `${eok.toLocaleString('ko-KR')}억원`;
-            return `${eok}억 ${man.toLocaleString('ko-KR')}만원`;
-        }
-        return Math.round(value).toLocaleString('ko-KR') + '만원';
-    }
+
 
     function animateNumbers(container) {
         container.querySelectorAll('.stat-value').forEach((el) => {
-            const text = el.textContent;
-            // 그냥 페이드인 애니메이션으로 처리
+            // 페이드인 애니메이션으로 처리
             el.style.opacity = '0';
             el.style.transform = 'translateY(6px)';
             el.style.transition = 'all 0.4s ease';

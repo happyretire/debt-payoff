@@ -264,6 +264,25 @@ const Calculator = (() => {
         grace: '#ef4444',
     };
 
+    function formatKRW(value) {
+        if (value >= 10000) {
+            const uk = Math.floor(value / 10000);
+            const man = Math.round(value % 10000);
+            return man > 0 ? `${uk}억 ${man.toLocaleString()}만원` : `${uk}억원`;
+        }
+        return Math.round(value).toLocaleString() + '만원';
+    }
+
+    function formatCompactKRW(value) {
+        if (value >= 10000) {
+            return (value / 10000).toFixed(1).replace(/\.0$/, '') + '억';
+        }
+        if (value >= 1000) {
+            return (value / 1000).toFixed(0) + '천만'; // 천 -> 천만으로 수정해봄 (기존 chart.js 참고)
+        }
+        return Math.round(value).toLocaleString() + '만';
+    }
+
     return {
         equalPayment,
         equalPrincipal,
@@ -271,6 +290,8 @@ const Calculator = (() => {
         graceEqualPayment,
         earlyRepayment,
         summarize,
+        formatKRW,
+        formatCompactKRW,
         METHOD_LABELS,
         METHOD_COLORS,
     };

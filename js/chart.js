@@ -27,17 +27,13 @@ const ChartManager = (() => {
         cachedResults = results;
     }
 
-    /**
-     * 월별 상환액 추이 차트
-     */
-    function renderPaymentChart(ctx) {
-        const theme = getThemeColors();
-        const datasets = [];
+    // ─── 공통 로직 ───
 
+    function createDatasets(accessor) {
+        const datasets = [];
         for (const [method, schedule] of Object.entries(cachedResults)) {
             const color = Calculator.METHOD_COLORS[method];
-            // 대출 기간이 길면 연 단위로 샘플링
-            const sampled = sampleData(schedule, 'payment');
+            const sampled = sampleData(schedule, accessor);
             datasets.push({
                 label: Calculator.METHOD_LABELS[method],
                 data: sampled.values,
@@ -50,13 +46,16 @@ const ChartManager = (() => {
                 fill: true,
             });
         }
+        return datasets;
+    }
+
+    function renderBaseChart(ctx, datasets, scaleOptions, tooltipFormatter) {
+        const theme = getThemeColors();
+        const labels = sampleLabels(Object.values(cachedResults)[0]);
 
         return new Chart(ctx, {
             type: 'line',
-            data: {
-                labels: sampleLabels(Object.values(cachedResults)[0]),
-                datasets,
-            },
+            data: { labels, datasets },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
@@ -68,7 +67,11 @@ const ChartManager = (() => {
                     },
                     tooltip: {
                         callbacks: {
-                            label: (ctx) => `${ctx.dataset.label}: ${formatKRW(ctx.parsed.y)}`,
+                            label: (context) => {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y;
+                                return `${label}: ${tooltipFormatter(value)}`;
+                            },
                         },
                     },
                 },
@@ -79,10 +82,8 @@ const ChartManager = (() => {
                     },
                     y: {
                         grid: { color: theme.gridColor },
-                        ticks: {
-                            color: theme.textColor,
-                            callback: (v) => formatCompactKRW(v),
-                        },
+                        ticks: { color: theme.textColor, ...scaleOptions.ticks },
+                        ...scaleOptions, // max, min 등 오버라이드
                     },
                 },
                 animation: { duration: 800, easing: 'easeInOutQuart' },
@@ -90,139 +91,60 @@ const ChartManager = (() => {
         });
     }
 
-    /**
-     * 대출 잔액 변화 차트
-     */
+    // ─── 차트별 렌더링 ───
+
+    function renderPaymentChart(ctx) {
+        const datasets = createDatasets('payment');
+
+        let yMax = undefined;
+        if (window.isClipped) {
+            yMax = calculateSmartLimit();
+        }
+
+        return renderBaseChart(
+            ctx,
+            datasets,
+            {
+                max: yMax,
+                ticks: { callback: (v) => Calculator.formatCompactKRW(v) }
+            },
+            (v) => Calculator.formatKRW(v)
+        );
+    }
+
     function renderBalanceChart(ctx) {
-        const theme = getThemeColors();
-        const datasets = [];
-
-        for (const [method, schedule] of Object.entries(cachedResults)) {
-            const color = Calculator.METHOD_COLORS[method];
-            const sampled = sampleData(schedule, 'balance');
-            datasets.push({
-                label: Calculator.METHOD_LABELS[method],
-                data: sampled.values,
-                borderColor: color,
-                backgroundColor: hexToRgba(color, 0.06),
-                borderWidth: 2.5,
-                pointRadius: 0,
-                pointHoverRadius: 4,
-                tension: 0.2,
-                fill: true,
-            });
-        }
-
-        return new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: sampleLabels(Object.values(cachedResults)[0]),
-                datasets,
+        const datasets = createDatasets('balance');
+        return renderBaseChart(
+            ctx,
+            datasets,
+            {
+                ticks: { callback: (v) => Calculator.formatCompactKRW(v) }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { color: theme.textColor, usePointStyle: true, pointStyle: 'circle', padding: 15 },
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => `${ctx.dataset.label}: ${formatKRW(ctx.parsed.y)}`,
-                        },
-                    },
-                },
-                scales: {
-                    x: {
-                        grid: { color: theme.gridColor },
-                        ticks: { color: theme.textColor, maxTicksLimit: 15 },
-                    },
-                    y: {
-                        grid: { color: theme.gridColor },
-                        ticks: {
-                            color: theme.textColor,
-                            callback: (v) => formatCompactKRW(v),
-                        },
-                    },
-                },
-                animation: { duration: 800, easing: 'easeInOutQuart' },
-            },
-        });
+            (v) => Calculator.formatKRW(v)
+        );
     }
 
-    /**
-     * 이자 비중 변화 차트 (상환액 중 이자 비율)
-     */
     function renderInterestRatioChart(ctx) {
-        const theme = getThemeColors();
-        const datasets = [];
-
-        for (const [method, schedule] of Object.entries(cachedResults)) {
-            const color = Calculator.METHOD_COLORS[method];
-            const sampled = sampleDataCustom(schedule, (row) =>
-                row.payment > 0 ? (row.interest / row.payment) * 100 : 0
-            );
-            datasets.push({
-                label: Calculator.METHOD_LABELS[method],
-                data: sampled,
-                borderColor: color,
-                backgroundColor: hexToRgba(color, 0.06),
-                borderWidth: 2,
-                pointRadius: 0,
-                pointHoverRadius: 4,
-                tension: 0.3,
-                fill: true,
-            });
-        }
-
-        return new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: sampleLabels(Object.values(cachedResults)[0]),
-                datasets,
+        const datasets = createDatasets((row) =>
+            row.payment > 0 ? (row.interest / row.payment) * 100 : 0
+        );
+        return renderBaseChart(
+            ctx,
+            datasets,
+            {
+                min: 0,
+                max: 100,
+                ticks: { callback: (v) => v + '%' }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                        labels: { color: theme.textColor, usePointStyle: true, pointStyle: 'circle', padding: 15 },
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
-                        },
-                    },
-                },
-                scales: {
-                    x: {
-                        grid: { color: theme.gridColor },
-                        ticks: { color: theme.textColor, maxTicksLimit: 15 },
-                    },
-                    y: {
-                        grid: { color: theme.gridColor },
-                        ticks: {
-                            color: theme.textColor,
-                            callback: (v) => v + '%',
-                        },
-                        min: 0,
-                        max: 100,
-                    },
-                },
-                animation: { duration: 800, easing: 'easeInOutQuart' },
-            },
-        });
+            (v) => v.toFixed(1) + '%'
+        );
     }
 
-    /**
-     * 차트 렌더링 (타입별 분기)
-     */
-    function render(type) {
+    // ─── 메인 함수 ───
+
+    function render(type, isClipped = false) {
         currentType = type || currentType;
+        window.isClipped = isClipped;
 
         if (mainChart) {
             mainChart.destroy();
@@ -230,6 +152,7 @@ const ChartManager = (() => {
         }
 
         const canvas = document.getElementById('mainChart');
+        if (!canvas) return;
         const ctx = canvas.getContext('2d');
 
         switch (currentType) {
@@ -245,42 +168,49 @@ const ChartManager = (() => {
         }
     }
 
-    /**
-     * 테마 변경 시 차트 재렌더링
-     */
     function refresh() {
         if (Object.keys(cachedResults).length > 0) {
-            render(currentType);
+            render(currentType, window.isClipped); // isClipped 상태 유지
         }
     }
 
     // ─── 헬퍼 함수 ───
 
-    function sampleData(schedule, key) {
+    function calculateSmartLimit() {
+        let allValues = [];
+        for (const schedule of Object.values(cachedResults)) {
+            allValues = allValues.concat(schedule.map(row => row.payment));
+        }
+
+        if (allValues.length === 0) return undefined;
+
+        allValues.sort((a, b) => b - a);
+        const maxVal = allValues[0];
+        const cutoffIndex = Math.max(1, Math.floor(allValues.length * 0.05));
+        const cutoffVal = allValues[cutoffIndex];
+
+        if (maxVal > cutoffVal * 2) {
+            return cutoffVal * 1.3;
+        }
+        return undefined;
+    }
+
+    function sampleData(schedule, accessor) {
         if (!schedule || schedule.length === 0) return { values: [] };
         const step = schedule.length > 120 ? 12 : schedule.length > 60 ? 6 : 1;
         const values = [];
+
+        const getValue = typeof accessor === 'function'
+            ? accessor
+            : (row) => row[accessor];
+
         for (let i = 0; i < schedule.length; i += step) {
-            values.push(schedule[i][key]);
+            values.push(getValue(schedule[i]));
         }
-        // 마지막 값 포함
         if ((schedule.length - 1) % step !== 0) {
-            values.push(schedule[schedule.length - 1][key]);
+            values.push(getValue(schedule[schedule.length - 1]));
         }
         return { values };
-    }
-
-    function sampleDataCustom(schedule, fn) {
-        if (!schedule || schedule.length === 0) return [];
-        const step = schedule.length > 120 ? 12 : schedule.length > 60 ? 6 : 1;
-        const values = [];
-        for (let i = 0; i < schedule.length; i += step) {
-            values.push(fn(schedule[i]));
-        }
-        if ((schedule.length - 1) % step !== 0) {
-            values.push(fn(schedule[schedule.length - 1]));
-        }
-        return values;
     }
 
     function sampleLabels(schedule) {
@@ -308,23 +238,6 @@ const ChartManager = (() => {
         const g = parseInt(hex.slice(3, 5), 16);
         const b = parseInt(hex.slice(5, 7), 16);
         return `rgba(${r},${g},${b},${alpha})`;
-    }
-
-    function formatKRW(value) {
-        if (value >= 10000) {
-            return (value / 10000).toFixed(1) + '억원';
-        }
-        return Math.round(value).toLocaleString('ko-KR') + '만원';
-    }
-
-    function formatCompactKRW(value) {
-        if (value >= 10000) {
-            return (value / 10000).toFixed(0) + '억';
-        }
-        if (value >= 1000) {
-            return (value / 1000).toFixed(0) + '천만';
-        }
-        return Math.round(value).toLocaleString('ko-KR') + '만';
     }
 
     return { init, setResults, render, refresh };

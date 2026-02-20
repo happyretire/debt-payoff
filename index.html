@@ -24,7 +24,10 @@
   <main class="app-container">
     <!-- ─── Input Section ─── -->
     <section class="card" id="input-section">
-      <h2 class="section-title"><span class="icon">📝</span>대출 정보 입력</h2>
+      <div class="section-title-row">
+        <h2 class="section-title"><span class="icon">📝</span>대출 정보 입력</h2>
+        <button id="btnReset" class="btn-reset" title="입력값 초기화">초기화</button>
+      </div>
 
       <div class="input-grid">
         <div class="input-group">
@@ -33,6 +36,7 @@
             <input type="number" id="loanAmount" value="30000" min="100" step="100" placeholder="30000" />
             <span>만원</span>
           </div>
+          <div class="input-helper-text" id="loanAmountHelper"></div>
         </div>
 
         <div class="input-group">
@@ -49,6 +53,7 @@
             <input type="number" id="loanPeriod" value="30" min="1" max="50" step="1" placeholder="30" />
             <span>년</span>
           </div>
+          <div class="input-helper-text" id="periodHelper"></div>
         </div>
       </div>
 
@@ -80,10 +85,17 @@
 
         <!-- Grace Period Input (hidden by default) -->
         <div class="grace-option hidden" id="graceOption">
-          <label for="gracePeriod">거치 기간</label>
-          <div class="input-suffix">
-            <input type="number" id="gracePeriod" value="2" min="1" max="10" step="1" />
-            <span>년</span>
+          <div class="grace-header">
+            <label for="gracePeriod">거치 기간 설정</label>
+            <span class="grace-hint">최대 10년까지 설정 가능하며, 이 기간에는 원금을 갚지 않고 이자만 납부합니다.</span>
+          </div>
+          <div class="grace-control-wrapper">
+            <div class="input-suffix">
+              <input type="number" id="gracePeriod" value="2" min="1" max="10" step="1" />
+              <span>년</span>
+            </div>
+            <input type="range" id="graceRange" min="1" max="10" step="1" value="2" class="grace-range" />
+            <div class="grace-info-badge" id="graceMonthsBadge">24개월 거치</div>
           </div>
         </div>
       </div>
@@ -113,10 +125,16 @@
 
       <!-- Charts -->
       <div class="chart-card">
-        <div class="chart-tabs">
-          <button class="chart-tab active" data-chart="payment">월 상환액 추이</button>
-          <button class="chart-tab" data-chart="balance">대출 잔액 변화</button>
-          <button class="chart-tab" data-chart="interest">이자 비중 변화</button>
+        <div class="chart-header-row">
+          <div class="chart-tabs">
+            <button class="chart-tab active" data-chart="payment">월 상환액 추이</button>
+            <button class="chart-tab" data-chart="balance">대출 잔액 변화</button>
+            <button class="chart-tab" data-chart="interest">이자 비중 변화</button>
+          </div>
+          <label class="scale-toggle" title="만기 상환액 등 너무 큰 값을 화면에서 제외하여 비교하기 쉽게 만듭니다">
+            <input type="checkbox" id="clipToggle" />
+            <span class="toggle-label">Y축 최적화</span>
+          </label>
         </div>
         <div class="chart-container">
           <canvas id="mainChart"></canvas>
@@ -169,6 +187,7 @@
               <input type="number" id="earlyAmount" value="5000" min="100" step="100" />
               <span>만원</span>
             </div>
+            <div class="input-helper-text" id="earlyAmountHelper"></div>
           </div>
           <div class="input-group">
             <label for="earlyFeeRate">중도상환 수수료율</label>
